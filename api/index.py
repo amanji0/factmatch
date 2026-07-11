@@ -58,10 +58,16 @@ async def extract_claims(text: str) -> List[str]:
                 timeout=30
             )
             data = resp.json()
+            if "error" in data:
+                raise RuntimeError(f"Gemini API Error: {data['error'].get('message', 'Unknown error')}")
+            
             text_response = data["candidates"][0]["content"]["parts"][0]["text"]
             claims = json.loads(_strip_fences(text_response))
             return claims if isinstance(claims, list) else []
-        except Exception:
+        except Exception as e:
+            if isinstance(e, RuntimeError):
+                raise e
+            print(f"Error extracting claims: {e}")
             return []
 
 async def search_evidence(session: httpx.AsyncClient, claim: str, domains: Optional[List[str]] = None) -> List[Source]:
@@ -112,13 +118,18 @@ async def classify_stance(session: httpx.AsyncClient, claim: str, source: Source
             timeout=30
         )
         data = resp.json()
+        if "error" in data:
+            raise RuntimeError(f"Gemini API Error: {data['error'].get('message', 'Unknown error')}")
+            
         text_response = data["candidates"][0]["content"]["parts"][0]["text"]
         parsed = json.loads(_strip_fences(text_response))
         source.stance = parsed.get("stance", "unclear")
         source.reasoning = parsed.get("reasoning", "")
-    except Exception:
+    except Exception as e:
+        if isinstance(e, RuntimeError):
+            raise e
         source.stance = "unclear"
-        source.reasoning = "Failed to parse AI response."
+        source.reasoning = f"Failed to parse AI response: {e}"
     return source
 
 def aggregate_claim(claim: str, sources: List[Source]) -> ClaimResult:
