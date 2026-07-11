@@ -45,17 +45,22 @@ async def extract_claims(text: str) -> List[str]:
     # Return at most 3 sentences as mock claims to keep the search fast
     return [s for s in sentences if len(s) > 10][:3]
 
-async def search_evidence(session: httpx.AsyncClient, claim: str) -> List[Source]:
+async def search_evidence(session: httpx.AsyncClient, claim: str, domains: Optional[List[str]] = None) -> List[Source]:
     if not TAVILY_API_KEY:
         raise RuntimeError("TAVILY_API_KEY is not set on the server")
+    
+    payload = {
+        "api_key": TAVILY_API_KEY,
+        "query": claim,
+        "search_depth": "advanced",
+        "max_results": MAX_SOURCES_PER_CLAIM,
+    }
+    if domains:
+        payload["include_domains"] = domains
+
     resp = await session.post(
         "https://api.tavily.com/search",
-        json={
-            "api_key": TAVILY_API_KEY,
-            "query": claim,
-            "search_depth": "advanced",
-            "max_results": MAX_SOURCES_PER_CLAIM,
-        },
+        json=payload,
         timeout=30,
     )
     resp.raise_for_status()
@@ -104,19 +109,19 @@ def overall_score(results: List[ClaimResult]) -> dict:
         counts[r.verdict] = counts.get(r.verdict, 0) + 1
     return {"score": score, "claim_counts": counts, "total_claims": len(results)}
 
-async def _check_one_claim(session: httpx.AsyncClient, claim: str) -> ClaimResult:
-    sources = await search_evidence(session, claim)
+async def _check_one_claim(session: httpx.AsyncClient, claim: str, domains: Optional[List[str]] = None) -> ClaimResult:
+    sources = await search_evidence(session, claim, domains)
     if sources:
         sources = list(await asyncio.gather(*[classify_stance(claim, s) for s in sources]))
     return aggregate_claim(claim, sources)
 
-async def run_fact_check(text: str) -> dict:
+async def run_fact_check(text: str, domains: Optional[List[str]] = None) -> dict:
     text = text.strip()[:MAX_INPUT_CHARS]
     claims = await extract_claims(text)
     if not claims:
         return {"overall": overall_score([]), "claims": []}
     async with httpx.AsyncClient() as session:
-        results = list(await asyncio.gather(*[_check_one_claim(session, c) for c in claims]))
+        results = list(await asyncio.gather(*[_check_one_claim(session, c, domains) for c in claims]))
     return {
         "overall": overall_score(results),
         "claims": [
@@ -147,13 +152,14 @@ app.add_middleware(
 
 class CheckRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=MAX_INPUT_CHARS)
+    domains: Optional[List[str]] = None
 
 @app.post("/api/check")
 async def check(req: CheckRequest):
     if not req.text.strip():
         raise HTTPException(status_code=400, detail="Text is required.")
     try:
-        return await run_fact_check(req.text)
+        return await run_fact_check(req.text, req.domains)
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:

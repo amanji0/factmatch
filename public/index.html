@@ -285,6 +285,11 @@
   </div>
   <textarea id="inputText" maxlength="8000" placeholder="Paste the text you want checked here..."></textarea>
 
+  <div class="field-label" style="margin-top: 18px;">
+    <span>Limit search to specific websites (optional)</span>
+  </div>
+  <input type="text" id="domainsInput" placeholder="e.g. aajtak.in, twitter.com, x.com" style="width: 100%; background: var(--paper-dim); border: 1px solid var(--rule); border-radius: var(--radius); padding: 12px 16px; font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--ink);">
+
   <div class="controls">
     <button class="run" id="runBtn">Run check</button>
     <span class="hint">Each claim is searched and verified independently — this can take a moment.</span>
@@ -409,6 +414,13 @@ async function runCheck(){
   const text = textarea.value.trim();
   if (!text){ return; }
 
+  const domainsRaw = document.getElementById('domainsInput').value;
+  const domains = domainsRaw.split(',').map(d => d.trim()).filter(d => d.length > 0);
+  const payload = { text };
+  if (domains.length > 0) {
+    payload.domains = domains;
+  }
+
   errorEl.style.display = 'none';
   resultsEl.style.display = 'none';
   runBtn.disabled = true;
@@ -425,7 +437,7 @@ async function runCheck(){
     const resp = await fetch('/api/check', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text })
+      body: JSON.stringify(payload)
     });
     const data = await resp.json();
     if (!resp.ok){
