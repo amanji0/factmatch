@@ -4,7 +4,6 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import List, Optional
 import httpx
-from anthropic import AsyncAnthropic
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,11 +11,11 @@ from pydantic import BaseModel, Field
 
 # --- Pipeline Code ---
 
-MODEL = "claude-sonnet-4-6"
+GEMINI_MODEL = "gemini-1.5-flash"
 MAX_SOURCES_PER_CLAIM = 4
 MAX_INPUT_CHARS = 8000
 
-client = AsyncAnthropic()  # reads ANTHROPIC_API_KEY from env
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY")
 
 @dataclass
@@ -39,11 +38,31 @@ def _strip_fences(raw: str) -> str:
     return raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
 
 async def extract_claims(text: str) -> List[str]:
-    # MOCK MODE (FREE): Simple sentence splitting instead of calling Anthropic's Claude
-    import re
-    sentences = re.split(r'(?<=[.!?]) +', text.strip())
-    # Return at most 3 sentences as mock claims to keep the search fast
-    return [s for s in sentences if len(s) > 10][:3]
+    if not GEMINI_API_KEY:
+        raise RuntimeError("GEMINI_API_KEY is not set on the server")
+    prompt = f"""
+    You are an expert fact-checker. Extract up to 5 atomic, verifiable factual claims from the following text.
+    Ignore opinions, questions, and vague statements. Return ONLY a JSON list of strings.
+
+    Text:
+    {text}
+    """
+    async with httpx.AsyncClient() as session:
+        try:
+            resp = await session.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}",
+                json={
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"temperature": 0.1, "maxOutputTokens": 1024}
+                },
+                timeout=30
+            )
+            data = resp.json()
+            text_response = data["candidates"][0]["content"]["parts"][0]["text"]
+            claims = json.loads(_strip_fences(text_response))
+            return claims if isinstance(claims, list) else []
+        except Exception:
+            return []
 
 async def search_evidence(session: httpx.AsyncClient, claim: str, domains: Optional[List[str]] = None) -> List[Source]:
     if not TAVILY_API_KEY:
@@ -70,17 +89,36 @@ async def search_evidence(session: httpx.AsyncClient, claim: str, domains: Optio
         for r in data.get("results", [])
     ]
 
-async def classify_stance(claim: str, source: Source) -> Source:
-    # MOCK MODE (FREE): Randomly assign a stance instead of calling Anthropic's Claude
-    import random
-    stances = ["supports", "contradicts", "unclear"]
-    source.stance = random.choice(stances)
-    if source.stance == "supports":
-        source.reasoning = "This fact is matching from this source."
-    elif source.stance == "contradicts":
-        source.reasoning = "This fact is contradicted by this source."
-    else:
-        source.reasoning = "This source is unclear about the fact."
+async def classify_stance(session: httpx.AsyncClient, claim: str, source: Source) -> Source:
+    if not GEMINI_API_KEY:
+        raise RuntimeError("GEMINI_API_KEY is not set on the server")
+    prompt = f"""
+    You are an expert fact-checker. You are given a claim and a source text.
+    Decide if the source SUPPORTS the claim, CONTRADICTS the claim, or if it is UNCLEAR.
+    Provide a 1-sentence reasoning for your stance based ONLY on the source text.
+    Return ONLY JSON in this format: {{"stance": "supports|contradicts|unclear", "reasoning": "..."}}
+
+    Claim: {claim}
+    Source Title: {source.title}
+    Source Snippet: {source.snippet}
+    """
+    try:
+        resp = await session.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}",
+            json={
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {"temperature": 0.1, "maxOutputTokens": 256}
+            },
+            timeout=30
+        )
+        data = resp.json()
+        text_response = data["candidates"][0]["content"]["parts"][0]["text"]
+        parsed = json.loads(_strip_fences(text_response))
+        source.stance = parsed.get("stance", "unclear")
+        source.reasoning = parsed.get("reasoning", "")
+    except Exception:
+        source.stance = "unclear"
+        source.reasoning = "Failed to parse AI response."
     return source
 
 def aggregate_claim(claim: str, sources: List[Source]) -> ClaimResult:
@@ -112,7 +150,7 @@ def overall_score(results: List[ClaimResult]) -> dict:
 async def _check_one_claim(session: httpx.AsyncClient, claim: str, domains: Optional[List[str]] = None) -> ClaimResult:
     sources = await search_evidence(session, claim, domains)
     if sources:
-        sources = list(await asyncio.gather(*[classify_stance(claim, s) for s in sources]))
+        sources = list(await asyncio.gather(*[classify_stance(session, claim, s) for s in sources]))
     return aggregate_claim(claim, sources)
 
 async def run_fact_check(text: str, domains: Optional[List[str]] = None) -> dict:
