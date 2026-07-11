@@ -3,7 +3,6 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from pipeline import run_fact_check, MAX_INPUT_CHARS
@@ -39,8 +38,3 @@ async def check(req: CheckRequest):
 async def health():
     return {"status": "ok"}
 
-
-# Serve the frontend as static files (single deployable service)
-FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
-if FRONTEND_DIR.exists():
-    app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
