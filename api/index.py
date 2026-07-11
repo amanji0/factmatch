@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 # --- Pipeline Code ---
 
-GEMINI_MODEL = "gemini-1.5-flash"
+GEMINI_MODEL = "gemini-2.5-flash"
 MAX_SOURCES_PER_CLAIM = 4
 MAX_INPUT_CHARS = 8000
 
