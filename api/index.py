@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 # --- Pipeline Code ---
 
-GROQ_MODEL = "llama3-8b-8192"
+GROQ_MODEL = "llama-3.1-8b-instant"
 MAX_SOURCES_PER_CLAIM = 4
 MAX_INPUT_CHARS = 8000
 
