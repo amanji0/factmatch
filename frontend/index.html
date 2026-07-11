@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Case File — RAG Fact Checker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper: #f1efe6;
+    --paper-dim: #e7e2d2;
+    --ink: #22252a;
+    --ink-soft: #5a564c;
+    --rule: #cfc7b0;
+    --accent: #2c3e50;
+    --green: #2f6b4f;
+    --red: #a13d2e;
+    --amber: #b8862f;
+    --slate: #6b6459;
+    --radius: 3px;
+  }
+
+  *{ box-sizing: border-box; }
+
+  body{
+    margin:0;
+    background: var(--paper);
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(34,37,42,0.035) 1px, transparent 0);
+    background-size: 22px 22px;
+    color: var(--ink);
+    font-family: 'JetBrains Mono', monospace;
+    min-height: 100vh;
+  }
+
+  .wrap{
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 48px 20px 100px;
+  }
+
+  header{
+    margin-bottom: 36px;
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: 18px;
+  }
+
+  .tab{
+    display:inline-block;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--paper);
+    background: var(--accent);
+    padding: 4px 10px;
+    border-radius: var(--radius);
+    margin-bottom: 14px;
+  }
+
+  h1{
+    font-family: 'Fraunces', serif;
+    font-optical-sizing: auto;
+    font-weight: 600;
+    font-size: 40px;
+    line-height: 1.05;
+    margin: 0 0 8px;
+    letter-spacing: -0.01em;
+  }
+
+  .subtitle{
+    color: var(--ink-soft);
+    font-size: 13px;
+    max-width: 52ch;
+  }
+
+  .field-label{
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    margin-bottom: 8px;
+    display:flex;
+    justify-content: space-between;
+  }
+
+  textarea{
+    width: 100%;
+    min-height: 160px;
+    background: var(--paper-dim);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    padding: 16px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--ink);
+    resize: vertical;
+  }
+  textarea:focus-visible{
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .controls{
+    display:flex;
+    align-items:center;
+    justify-content: space-between;
+    margin-top: 14px;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  button.run{
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    background: var(--ink);
+    color: var(--paper);
+    border: none;
+    padding: 13px 22px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: transform 0.15s ease, background 0.15s ease;
+  }
+  button.run:hover:not(:disabled){ background: var(--accent); }
+  button.run:active:not(:disabled){ transform: scale(0.97); }
+  button.run:disabled{ opacity: 0.5; cursor: not-allowed; }
+  button.run:focus-visible{ outline: 2px solid var(--accent); outline-offset: 3px; }
+
+  .hint{ font-size: 11px; color: var(--ink-soft); }
+
+  #status{
+    margin-top: 22px;
+    font-size: 13px;
+    color: var(--ink-soft);
+    display:none;
+  }
+  #status.show{ display:flex; align-items:center; gap: 10px; }
+  .spinner{
+    width: 14px; height:14px;
+    border: 2px solid var(--rule);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @media (prefers-reduced-motion: reduce){ .spinner{ animation: none; } }
+  @keyframes spin{ to{ transform: rotate(360deg); } }
+
+  #error{
+    display:none;
+    margin-top: 18px;
+    border: 1px solid var(--red);
+    color: var(--red);
+    background: rgba(161,61,46,0.06);
+    padding: 12px 14px;
+    border-radius: var(--radius);
+    font-size: 13px;
+  }
+
+  #results{ margin-top: 40px; display:none; }
+
+  .overall{
+    border: 2px solid var(--ink);
+    border-radius: var(--radius);
+    padding: 22px 20px;
+    margin-bottom: 30px;
+    display:flex;
+    align-items:baseline;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .overall .score{
+    font-family: 'Fraunces', serif;
+    font-weight: 700;
+    font-size: 56px;
+    line-height: 1;
+  }
+  .overall .score-label{
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    margin-top: 6px;
+  }
+  .overall .breakdown{
+    font-size: 12px;
+    color: var(--ink-soft);
+    line-height: 1.9;
+    text-align: right;
+  }
+  .overall .breakdown b{ color: var(--ink); }
+
+  .claim-card{
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    background: rgba(255,255,255,0.35);
+    padding: 18px;
+    margin-bottom: 18px;
+    position: relative;
+  }
+
+  .claim-head{
+    display:flex;
+    justify-content: space-between;
+    align-items:flex-start;
+    gap: 14px;
+    margin-bottom: 10px;
+  }
+
+  .claim-text{
+    font-size: 14.5px;
+    line-height: 1.55;
+    flex: 1;
+  }
+
+  .stamp{
+    flex-shrink:0;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 11.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 7px 12px;
+    border-radius: 999px;
+    border: 2px solid currentColor;
+    transform: rotate(-4deg);
+    white-space: nowrap;
+    position: relative;
+    filter: url(#stampTexture);
+  }
+  .stamp.true{ color: var(--green); }
+  .stamp.false{ color: var(--red); }
+  .stamp.mixed{ color: var(--amber); }
+  .stamp.unverifiable{ color: var(--slate); }
+
+  .confidence{
+    font-size: 11px;
+    color: var(--ink-soft);
+    margin-bottom: 10px;
+  }
+
+  .sources{ margin-top: 10px; border-top: 1px dashed var(--rule); padding-top: 10px; }
+  .source{ font-size: 12.5px; margin-bottom: 9px; padding-left: 12px; border-left: 3px solid var(--rule); }
+  .source.supports{ border-left-color: var(--green); }
+  .source.contradicts{ border-left-color: var(--red); }
+  .source.unclear{ border-left-color: var(--slate); }
+  .source a{ color: var(--accent); text-decoration: none; font-weight: 500; }
+  .source a:hover{ text-decoration: underline; }
+  .source .reasoning{ color: var(--ink-soft); font-style: italic; margin-top: 2px; }
+
+  .empty-note{ font-size: 13px; color: var(--ink-soft); }
+
+  footer{
+    margin-top: 60px;
+    padding-top: 16px;
+    border-top: 1px solid var(--rule);
+    font-size: 11px;
+    color: var(--ink-soft);
+  }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+  <filter id="stampTexture" x="-20%" y="-20%" width="140%" height="140%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" result="noise" seed="4"/>
+    <feDisplacementMap in="SourceGraphic" in2="noise" scale="2.2"/>
+  </filter>
+</svg>
+
+<div class="wrap">
+  <header>
+    <span class="tab">Case No. — Open</span>
+    <h1>Fact Checker</h1>
+    <p class="subtitle">Paste any text — an article, a claim, something an AI wrote — and every checkable statement gets pulled out, searched against live sources, and stamped on its own evidence.</p>
+  </header>
+
+  <div class="field-label">
+    <span>Submit text</span>
+    <span id="charCount">0 / 8000</span>
+  </div>
+  <textarea id="inputText" maxlength="8000" placeholder="Paste the text you want checked here..."></textarea>
+
+  <div class="controls">
+    <button class="run" id="runBtn">Run check</button>
+    <span class="hint">Each claim is searched and verified independently — this can take a moment.</span>
+  </div>
+
+  <div id="status"><span class="spinner"></span><span id="statusText">Extracting claims…</span></div>
+  <div id="error"></div>
+
+  <div id="results">
+    <div class="overall" id="overallBox"></div>
+    <div id="claimsList"></div>
+  </div>
+
+  <footer>Verdicts are generated by an LLM reading search results — treat scores as a starting signal, not a final ruling.</footer>
+</div>
+
+<script>
+const textarea = document.getElementById('inputText');
+const charCount = document.getElementById('charCount');
+const runBtn = document.getElementById('runBtn');
+const statusEl = document.getElementById('status');
+const statusText = document.getElementById('statusText');
+const errorEl = document.getElementById('error');
+const resultsEl = document.getElementById('results');
+const overallBox = document.getElementById('overallBox');
+const claimsList = document.getElementById('claimsList');
+
+const STATUS_MESSAGES = [
+  'Extracting claims…',
+  'Searching live sources…',
+  'Weighing evidence…',
+  'Stamping verdicts…'
+];
+
+textarea.addEventListener('input', () => {
+  charCount.textContent = `${textarea.value.length} / 8000`;
+});
+
+function verdictLabel(v){
+  return { true: 'True', false: 'False', mixed: 'Mixed', unverifiable: 'Unverified' }[v] || v;
+}
+
+function stanceClass(s){
+  return ['supports','contradicts','unclear'].includes(s) ? s : 'unclear';
+}
+
+function renderResults(report){
+  const { overall, claims } = report;
+
+  if (!claims || claims.length === 0){
+    overallBox.innerHTML = `<div class="empty-note">No checkable factual claims were found in this text.</div>`;
+    claimsList.innerHTML = '';
+    resultsEl.style.display = 'block';
+    return;
+  }
+
+  const counts = overall.claim_counts || {};
+  const breakdownLines = Object.entries(counts)
+    .map(([k,v]) => `<b>${v}</b> ${verdictLabel(k).toLowerCase()}`)
+    .join('<br>');
+
+  overallBox.innerHTML = `
+    <div>
+      <div class="score">${overall.score === null ? '—' : overall.score + '%'}</div>
+      <div class="score-label">Overall accuracy score · ${overall.total_claims} claim(s) checked</div>
+    </div>
+    <div class="breakdown">${breakdownLines}</div>
+  `;
+
+  claimsList.innerHTML = claims.map(c => {
+    const supports = (c.sources || []).filter(s => s.stance === 'supports');
+    const contradicts = (c.sources || []).filter(s => s.stance === 'contradicts');
+    const unclear = (c.sources || []).filter(s => s.stance === 'unclear');
+    
+    let sourcesHtml = '';
+    
+    if (c.sources && c.sources.length > 0) {
+      if (supports.length > 0) {
+        sourcesHtml += `<div class="sources"><strong>Facts matching from these sources:</strong>` + supports.map(s => `
+            <div class="source ${stanceClass(s.stance)}">
+              <a href="${s.url}" target="_blank" rel="noopener noreferrer">${s.title || s.url}</a>
+              <div class="reasoning">${s.reasoning || ''}</div>
+            </div>
+          `).join('') + `</div>`;
+      }
+      if (contradicts.length > 0) {
+        sourcesHtml += `<div class="sources"><strong>Facts contradicted by these sources:</strong>` + contradicts.map(s => `
+            <div class="source ${stanceClass(s.stance)}">
+              <a href="${s.url}" target="_blank" rel="noopener noreferrer">${s.title || s.url}</a>
+              <div class="reasoning">${s.reasoning || ''}</div>
+            </div>
+          `).join('') + `</div>`;
+      }
+      if (unclear.length > 0) {
+        sourcesHtml += `<div class="sources"><strong>Unclear sources:</strong>` + unclear.map(s => `
+            <div class="source ${stanceClass(s.stance)}">
+              <a href="${s.url}" target="_blank" rel="noopener noreferrer">${s.title || s.url}</a>
+              <div class="reasoning">${s.reasoning || ''}</div>
+            </div>
+          `).join('') + `</div>`;
+      }
+    } else {
+      sourcesHtml = `<div class="sources"><span class="empty-note">No sources found for this claim.</span></div>`;
+    }
+
+    return `
+      <div class="claim-card">
+        <div class="claim-head">
+          <div class="claim-text">${c.claim}</div>
+          <div class="stamp ${c.verdict}">${verdictLabel(c.verdict)}</div>
+        </div>
+        <div class="confidence">Confidence: ${Math.round((c.confidence || 0) * 100)}%</div>
+        ${sourcesHtml}
+      </div>
+    `;
+  }).join('');
+
+  resultsEl.style.display = 'block';
+}
+
+async function runCheck(){
+  const text = textarea.value.trim();
+  if (!text){ return; }
+
+  errorEl.style.display = 'none';
+  resultsEl.style.display = 'none';
+  runBtn.disabled = true;
+  statusEl.classList.add('show');
+
+  let msgIndex = 0;
+  statusText.textContent = STATUS_MESSAGES[0];
+  const cycle = setInterval(() => {
+    msgIndex = (msgIndex + 1) % STATUS_MESSAGES.length;
+    statusText.textContent = STATUS_MESSAGES[msgIndex];
+  }, 3500);
+
+  try {
+    const resp = await fetch('/api/check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text })
+    });
+    const data = await resp.json();
+    if (!resp.ok){
+      throw new Error(data.detail || 'Something went wrong while checking this text.');
+    }
+    renderResults(data);
+  } catch (err){
+    errorEl.textContent = err.message || 'Request failed.';
+    errorEl.style.display = 'block';
+  } finally {
+    clearInterval(cycle);
+    statusEl.classList.remove('show');
+    runBtn.disabled = false;
+  }
+}
+
+runBtn.addEventListener('click', runCheck);
+</script>
+
+</body>
+</html>
