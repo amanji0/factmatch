@@ -261,6 +261,17 @@
     font-size: 11px;
     color: var(--ink-soft);
   }
+  @media (max-width: 600px) {
+    h1 { font-size: 32px; }
+    .wrap { padding: 24px 16px 80px; }
+    .controls { flex-direction: column; align-items: stretch; }
+    button.run { width: 100%; padding: 16px; font-size: 15px; }
+    .overall { flex-direction: column; gap: 12px; align-items: flex-start; }
+    .overall .breakdown { text-align: left; }
+    .claim-head { flex-direction: column; }
+    .stamp { align-self: flex-start; transform: rotate(-2deg); margin-top: 6px; }
+    .field-label { flex-direction: column; gap: 4px; }
+  }
 </style>
 </head>
 <body>
